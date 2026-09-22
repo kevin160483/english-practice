@@ -1,0 +1,35 @@
+name: 每日練習提醒
+
+# 台北時間 12:30 = UTC 04:30。想改時間就改下面的 cron（用 UTC）。
+on:
+  schedule:
+    - cron: '30 4 * * *'
+  workflow_dispatch:
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 推播到手機
+        env:
+          TOPIC: ${{ secrets.NTFY_TOPIC }}
+          SITE: ${{ vars.SITE_URL }}
+        run: |
+          if [ -z "$TOPIC" ]; then echo "沒設 NTFY_TOPIC，跳過"; exit 0; fi
+          DOW=$(date -u +%u)
+          case $DOW in
+            1) FOCUS="單字重音，先把 20 個字念穩" ;;
+            2) FOCUS="課文逐句跟讀，跟老師原聲 A/B 比" ;;
+            3) FOCUS="片語與慣用語，連例句一起念" ;;
+            4) FOCUS="問答口說，用框架把答案講完整" ;;
+            5) FOCUS="回頭練標記的難句" ;;
+            6) FOCUS="文法測驗 + 今天到期的複習" ;;
+            *) FOCUS="挑今天到期的項目練一輪就好" ;;
+          esac
+          curl -s \
+            -H "Title: 今天的英文口說" \
+            -H "Tags: speaking_head" \
+            -H "Click: ${SITE:-https://github.com}" \
+            -d "15 分鐘：${FOCUS}" \
+            "https://ntfy.sh/${TOPIC}" > /dev/null
+          echo "已送出提醒"

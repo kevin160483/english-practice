@@ -1,0 +1,16 @@
+# 講義與上課錄音只留在本機，永遠不上傳
+inbox/*
+!inbox/README.md
+
+# 中間產物與模型
+build/
+voices/
+*.wav
+
+# 密碼只存在這台電腦
+password.txt
+password.txt
+
+.DS_Store
+__pycache__/
+python-path.txt
