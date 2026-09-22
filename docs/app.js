@@ -71,14 +71,16 @@ function itemsOf(mod, L) {
   if (!L) return [];
   const wrap = o => Object.assign(o, { lid: L.id, k: tag(L, o.id), mod });
   if (mod === 'vocab') return (L.vocab || []).map(v =>
-    wrap({ id: v.id, main: v.word, resp: v.resp, defn: v.def, speak: v.word, label: '單字' }));
+    wrap({ id: v.id, main: v.word, resp: v.resp, defn: v.def, zh: v.zh || '', speak: v.word, label: '單字' }));
   if (mod === 'article') return (L.article || []).flat().map((s, i) =>
-    wrap({ id: s.id, main: s.en, resp: s.resp, speak: s.en, label: '課文 ' + (i + 1) }));
+    wrap({ id: s.id, main: s.en, resp: s.resp, zh: s.zh || '', grammar: s.grammar || '',
+           speak: s.en, label: '課文 ' + (i + 1) }));
   if (mod === 'phrase') return [].concat(L.phrasals || [], L.collocations || [], L.idioms || []).map(p =>
-    wrap({ id: p.id, kind: p.kind, main: p.term, defn: p.def, example: p.example, speak: p.example || p.term,
+    wrap({ id: p.id, kind: p.kind, main: p.term, defn: p.def, zh: p.zh || '', example: p.example,
+           speak: p.example || p.term,
            label: { phrasal: '片語動詞', collocation: '搭配詞', idiom: '慣用語' }[p.kind] }));
   if (mod === 'qa') return (L.questions || []).map(q =>
-    wrap({ id: q.id, main: q.q, q, speak: q.q, label: '問答 ' + q.n }));
+    wrap({ id: q.id, main: q.q, q, zh: q.zh || '', tip: q.tip || '', speak: q.q, label: '問答 ' + q.n }));
   if (mod === 'grammar') return (L.grammar || []).reduce((a, s) => a.concat(
     s.items.map(i => wrap({ id: i.id, main: i.q, answerText: i.a, label: '文法 ' + s.code }))), []);
   return [];
@@ -132,6 +134,97 @@ function speak(text) {
   });
 }
 function stopAll() { try { speechSynthesis.cancel(); } catch (e) {} player.pause(); }
+
+/* ---------------- 本機發音指標（完全離線，錄音不離開這台裝置） ---------------- */
+let actx = null;
+const audioCtx = () => actx || (actx = new (window.AudioContext || window.webkitAudioContext)());
+
+async function analyse(arrayBuffer) {
+  const buf = await audioCtx().decodeAudioData(arrayBuffer.slice(0));
+  const ch = buf.getChannelData(0), sr = buf.sampleRate;
+  const win = Math.round(sr * 0.02), frames = [];
+  for (let i = 0; i + win <= ch.length; i += win) {
+    let sum = 0;
+    for (let j = 0; j < win; j++) { const v = ch[i + j]; sum += v * v; }
+    frames.push(Math.sqrt(sum / win));
+  }
+  const peak = frames.reduce((a, b) => Math.max(a, b), 0);
+  const thr = Math.max(peak * 0.08, 0.004);
+  const voiced = frames.map(f => f > thr);
+  const first = voiced.indexOf(true), last = voiced.lastIndexOf(true);
+  if (first < 0) return { empty: true, total: buf.duration };
+  const pauses = [];
+  let run = 0;
+  for (let i = first; i <= last; i++) {
+    if (!voiced[i]) run++;
+    else { if (run * 0.02 >= 0.25) pauses.push(run * 0.02); run = 0; }
+  }
+  const span = (last - first + 1) * 0.02;
+  return {
+    empty: false, total: buf.duration, span,
+    speech: span - pauses.reduce((a, b) => a + b, 0),
+    pauses, lead: first * 0.02, trail: (voiced.length - 1 - last) * 0.02,
+  };
+}
+
+async function bufferOf(url) {
+  const r = await fetch(url);
+  return r.arrayBuffer();
+}
+
+function pct(a, b) { return Math.round((a / b - 1) * 100); }
+
+async function compareWithReference(it, myBlob) {
+  const fb = $('fb');
+  if (!fb) return;
+  const refUrl = await audioURL(it);
+  if (!refUrl) { fb.innerHTML = '<div class="note">這一句還沒有範讀音檔，沒辦法比對長度與語速。</div>'; return; }
+  fb.innerHTML = '<div class="small muted">分析中…</div>';
+  try {
+    const [me, ref] = await Promise.all([
+      analyse(await myBlob.arrayBuffer()),
+      analyse(await bufferOf(refUrl)),
+    ]);
+    if (me.empty) {
+      fb.innerHTML = '<div class="note"><strong>幾乎沒錄到聲音。</strong>確認麥克風沒被靜音，講話時離麥克風近一點。</div>';
+      return;
+    }
+    if (me.span < 0.8 || me.speech < 0.5 || me.span < ref.span * 0.15) {
+      fb.innerHTML = '<div class="note"><strong>只錄到很短的一段。</strong>可能是麥克風沒收到，'
+        + '或按下錄音後太快就按停止。再試一次：按下錄音 → 停半秒 → 念完整句 → 再停半秒才按停止。</div>';
+      return;
+    }
+    const words = (it.speak || '').trim().split(/\s+/).filter(Boolean).length;
+    const myRate = words / Math.max(me.speech, .1), refRate = words / Math.max(ref.speech, .1);
+    const dRate = pct(myRate, refRate);
+    const dLen = pct(me.span, ref.span);
+    const rows = [];
+    const tag = (d, good, fastMsg, slowMsg) =>
+      Math.abs(d) <= good ? ['ok', '跟範讀差不多'] : [ 'bad', d > 0 ? fastMsg : slowMsg ];
+
+    let [c1, m1] = tag(dRate, 12, '比範讀快，容易吞字尾', '比範讀慢，注意別一個字一個字念');
+    rows.push(['語速', `${myRate.toFixed(1)} 字/秒`, c1, `範讀 ${refRate.toFixed(1)} · ${dRate >= 0 ? '+' : ''}${dRate}% ${m1}`]);
+
+    let [c2, m2] = tag(dLen, 15, '拖得比範讀長', '比範讀短，可能有音節沒念滿');
+    rows.push(['長度', `${me.span.toFixed(1)} 秒`, c2, `範讀 ${ref.span.toFixed(1)} 秒 · ${dLen >= 0 ? '+' : ''}${dLen}% ${m2}`]);
+
+    const dp = me.pauses.length - ref.pauses.length;
+    rows.push(['停頓', `${me.pauses.length} 處`, Math.abs(dp) <= 1 ? 'ok' : 'bad',
+      `範讀 ${ref.pauses.length} 處 · ` + (dp > 1 ? '中間斷太多次，試著一口氣念完一個意群'
+        : dp < -1 ? '幾乎沒停，可以在逗號處換氣' : '節奏接近')]);
+
+    if (me.trail < 0.08) rows.push(['結尾', '可能被切掉', 'bad', '最後一個字還沒念完就按了停止，停止前多留半秒']);
+    if (me.lead > 1.2) rows.push(['開頭', `空了 ${me.lead.toFixed(1)} 秒`, 'bad', '按下錄音後可以直接開始念']);
+
+    fb.innerHTML = '<div class="report">' + rows.map(([k, v, cls, note]) =>
+      `<div class="row2"><span class="k">${k}</span><span class="v ${cls}">${v}</span><span class="note2">${note}</span></div>`
+    ).join('') + '</div>' +
+      '<div class="small muted" style="margin-top:8px">這些數字是在你的瀏覽器裡算的，錄音沒有上傳。' +
+      '它看得出節奏和完整度，看不出個別音發得準不準 —— 那個要靠 A/B 對照自己聽。</div>';
+  } catch (e) {
+    fb.innerHTML = '<div class="note">這個瀏覽器無法分析音檔（' + (e.name || e) + '），A/B 對照還是可以用。</div>';
+  }
+}
 
 /* 錄音 */
 let stream = null, recorder = null, chunks = [], recTimer = null;
@@ -307,9 +400,11 @@ function renderList(v, mod) {
       const r = got(i.k) || {};
       const st = !r.reps ? '未練' : (isDue(i.k) ? '待複習' : '＋' + Math.max(0, Math.round((new Date(r.due) - new Date(today())) / 864e5)) + ' 天');
       const kind = refKind(i);
-      return `<button class="item" data-ix="${ix}">
+      const learned = (r.reps || 0) > 0;
+      return `<button class="item${learned ? ' learned' : ''}" data-ix="${ix}">
+        <span class="mark">${learned ? '✓' : ''}</span>
         <span class="chip${kind === 'teacher' ? ' accent' : ''}">${kind === 'teacher' ? '♪ 老師' : i.label}</span>
-        <span class="main"><span class="w">${esc(i.main).slice(0, 110)}</span><span class="s">${esc(i.resp || i.defn || '')}</span></span>
+        <span class="main"><span class="w">${esc(i.main).slice(0, 110)}</span><span class="s">${esc(i.zh || i.resp || i.defn || '')}</span></span>
         ${r.star ? '<span class="chip amber">★</span>' : ''}
         <span class="st ${isDue(i.k) && r.reps ? 'due' : ''}">${st}</span></button>`;
     }).join('')}</div>`;
@@ -339,6 +434,9 @@ function renderDrill(v) {
     <div class="drill-body">
       <div class="say" id="sayText">${esc(it.main)}</div>
       ${it.resp ? `<div class="resp">${respHTML(esc(it.resp))}</div>` : ''}
+      ${it.zh ? `<div class="zh">${esc(it.zh)}</div>` : ''}
+      ${it.grammar ? `<div class="gnote"><span class="gk">文法重點</span>${esc(it.grammar)}</div>` : ''}
+      ${it.tip ? `<div class="gnote"><span class="gk">回答方向</span>${esc(it.tip)}</div>` : ''}
       ${it.defn ? `<div class="defn">${esc(it.defn)}</div>` : ''}
       ${it.example ? `<div class="say" style="font-size:19px;margin-top:14px">${esc(it.example)}</div>` : ''}
       ${it.q ? `<div class="hintbox">
@@ -382,21 +480,33 @@ function renderDrill(v) {
     playRef(it, it.q.answer[+b.dataset.readpart].text, '_a' + b.dataset.readpart));
 
   const meter = $('meter');
+  let busy = false;
   $('rec').onclick = async () => {
+    if (busy) return;
     if (recorder && recorder.state === 'recording') {
+      busy = true;
       const blob = await stopRec();
       $('rec').classList.remove('on'); $('rec').textContent = '● 錄音'; meter.innerHTML = '';
+      busy = false;
       if (blob && blob.size) {
         if (myURL) URL.revokeObjectURL(myURL);
         myURL = URL.createObjectURL(blob);
         recPut(it.k, blob);
         $('mine').disabled = false; $('ab').disabled = false;
+        compareWithReference(it, blob);
+      } else {
+        $('fb').innerHTML = '<div class="note">沒有錄到東西，再試一次。</div>';
       }
       return;
     }
+    busy = true;
+    $('rec').textContent = '… 等麥克風';
+    meter.innerHTML = '<span class="small muted">如果瀏覽器問你要不要允許麥克風，按「允許」</span>';
     const ok = await startRec(t => meter.innerHTML = `<span class="dot live"></span>${t.toFixed(1)}s`);
-    if (!ok) return micHelp();
+    busy = false;
+    if (!ok) { $('rec').textContent = '● 錄音'; meter.innerHTML = ''; return micHelp(); }
     $('rec').classList.add('on'); $('rec').textContent = '■ 停止';
+    $('fb').innerHTML = '<div class="small muted">念完按一次停止，會幫你比對語速和長度。</div>';
   };
   $('mine').onclick = () => { if (myURL) { stopAll(); player.src = myURL; player.playbackRate = 1; player.play().catch(() => {}); } };
   $('ab').onclick = async () => {
