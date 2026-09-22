@@ -17,7 +17,7 @@ async function unseal(buf, key) {
   return crypto.subtle.decrypt({ name: 'AES-GCM', iv: d.slice(0, 12) }, key, d.slice(12));
 }
 async function fetchEnc(path) {
-  const r = await fetch(path, { cache: 'force-cache' });
+  const r = await fetch(path);   // 交給瀏覽器的一般快取，課程重做過才不會讀到舊檔
   if (!r.ok) throw new Error(path + ' ' + r.status);
   return unseal(await r.arrayBuffer(), KEY);
 }
