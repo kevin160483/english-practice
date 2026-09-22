@@ -1,1 +1,33 @@
-{"lessons": []}
+{
+ "lessons": [
+  {
+   "id": "L0",
+   "path": "L0/lesson.enc",
+   "audio": 33,
+   "added": "2026-09-23"
+  },
+  {
+   "id": "L1",
+   "path": "L1/lesson.enc",
+   "audio": 195,
+   "added": "2026-09-23"
+  },
+  {
+   "id": "L2",
+   "path": "L2/lesson.enc",
+   "audio": 160,
+   "added": "2026-09-23"
+  },
+  {
+   "id": "L3",
+   "path": "L3/lesson.enc",
+   "audio": 154,
+   "added": "2026-09-23"
+  }
+ ],
+ "kdf": {
+  "salt": "7cd6d193b0c37ea5bcddc80645bd310b",
+  "iters": 250000
+ },
+ "check": "d3eeb2624e196ceab5cd3040cf6a6e23fddbacc46c1f21ce49aa7766b860513a1776793471c354e13c93fe61"
+}
