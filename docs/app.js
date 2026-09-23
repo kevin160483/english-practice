@@ -679,7 +679,12 @@ async function unlock(pw, remember) {
 }
 async function boot() {
   loadState();
-  INDEX = await (await fetch(`${DATA}/index.json`, { cache: 'no-cache' })).json();
+  // 還沒有任何課程時 index.json 可能不存在，不要讓整個網站掛掉
+  try {
+    const r = await fetch(`${DATA}/index.json`, { cache: 'no-cache' });
+    INDEX = r.ok ? await r.json() : { lessons: [] };
+  } catch (e) { INDEX = { lessons: [] }; }
+  if (!INDEX || !INDEX.lessons) INDEX = { lessons: [] };
   if (!INDEX.lessons || !INDEX.lessons.length) {
     $('gate').hidden = false;
     $('gate').innerHTML = '<div class="card pad">還沒有任何課程。<br><br>把講義（例如 <code>L2.docx</code>）和同名的上課錄音放進電腦上的 <code>inbox</code> 資料夾，雙擊 <code>add-lesson.bat</code>，跑完這裡就會出現。</div>';
