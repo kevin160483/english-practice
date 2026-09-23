@@ -96,15 +96,34 @@ player.preservesPitch = true;
 const audioMeta = it => ((LESSONS[it.lid] || {}).audio || {})[it.id];
 const refKind = it => (audioMeta(it) || {}).kind || null;
 
+/* 同一句老師常會念不只一次，學生也會跟著念。對齊時把每一次都切下來，
+   這裡讓使用者挑哪一段才是老師的聲音，選擇記在這台裝置。 */
+const takeKey = (it, idSuffix) => it.lid + '/' + (idSuffix ? it.id + idSuffix : it.id);
+function takesOf(it, idSuffix) {
+  const meta = ((LESSONS[it.lid] || {}).audio || {})[idSuffix ? it.id + idSuffix : it.id];
+  if (!meta) return [];
+  return meta.takes && meta.takes.length ? meta.takes : [meta];
+}
+function takeIx(it, idSuffix) {
+  const n = takesOf(it, idSuffix).length;
+  if (n < 2) return 0;
+  const v = (state.takes || {})[takeKey(it, idSuffix)] || 0;
+  return Math.min(Math.max(v, 0), n - 1);
+}
+function setTake(it, idSuffix, ix) {
+  state.takes = state.takes || {};
+  state.takes[takeKey(it, idSuffix)] = ix;
+  save();
+}
+
 async function audioURL(it, idSuffix) {
-  const L = LESSONS[it.lid] || {};
-  const id = idSuffix ? it.id + idSuffix : it.id;
-  const meta = (L.audio || {})[id];
-  if (!meta) return null;
-  const ck = it.lid + '/' + id;
+  const takes = takesOf(it, idSuffix);
+  if (!takes.length) return null;
+  const rel = takes[takeIx(it, idSuffix)].src;
+  const ck = it.lid + '/' + rel;
   if (audioCache.has(ck)) return audioCache.get(ck);
   try {
-    const buf = await fetchEnc(`${DATA}/${it.lid}/${meta.src}.enc`);
+    const buf = await fetchEnc(`${DATA}/${it.lid}/${rel}.enc`);
     const url = URL.createObjectURL(new Blob([buf], { type: 'audio/mpeg' }));
     audioCache.set(ck, url);
     return url;
@@ -458,6 +477,8 @@ function renderDrill(v) {
       <button class="btn rec" id="rec">● 錄音</button>
       <button class="btn" id="mine" disabled>▶ 我的錄音</button>
       <button class="btn" id="ab" disabled>⇄ A/B 對照</button>
+      ${takesOf(it).length > 1 ? `<button class="btn" id="take" title="這句在錄音裡被念了不只一次，可能有一次是同學念的">
+        ⇱ 換一段（${takeIx(it) + 1}/${takesOf(it).length}）</button>` : ''}
       <span class="meter" id="meter"></span>
     </div>
     <div class="rate-row">
@@ -472,6 +493,12 @@ function renderDrill(v) {
   $('star').onclick = () => { r.star = !r.star; save(); render(); };
   $('speed').onchange = e => { state.settings.rate = parseFloat(e.target.value); save(); };
   $('model').onclick = () => playRef(it, it.speak);
+  if ($('take')) $('take').onclick = () => {
+    const n = takesOf(it).length;
+    setTake(it, '', (takeIx(it) + 1) % n);
+    render();
+    playRef(it, it.speak);
+  };
   $('prev').onclick = () => move(-1);
   $('next').onclick = () => move(1);
   v.querySelectorAll('[data-g]').forEach(b => b.onclick = () => { grade(it.k, +b.dataset.g); move(1); });
@@ -540,15 +567,20 @@ function micHelp(quiet) {
 function renderGrammar(v) {
   v.innerHTML = `<div class="row" style="margin-top:18px"><div><span class="eyebrow">${LID} · 文法測驗</span>
       <div class="small muted">打完一段按「批改這段」，錯的會顯示正解</div></div></div>
-    ${(LESSON.grammar || []).map(sec => `<div class="card" style="margin-top:14px">
+    ${(LESSON.grammar || []).map(sec => {
+      const done = sec.items.filter(i => ((got(tag(LESSON, i.id)) || {}).reps || 0) > 0).length;
+      return `<div class="card" style="margin-top:14px">
       <div class="drill-head"><span class="chip accent">${sec.code}</span><b>${esc(sec.name)}</b>
+        <span class="chip${done === sec.items.length ? ' accent' : ''}">${done}/${sec.items.length} 答對過</span>
         <span class="spacer"></span><span class="small muted">${esc(sec.instruction)}</span></div>
-      ${sec.items.map(i => `<div class="gq"><div class="txt">${esc(i.q)}</div>
+      ${sec.items.map(i => {
+        const learned = ((got(tag(LESSON, i.id)) || {}).reps || 0) > 0;
+        return `<div class="gq${learned ? ' learned' : ''}"><div class="txt"><span class="mark">${learned ? '✓' : ''}</span>${esc(i.q)}</div>
         <div class="row"><input type="text" id="in_${i.id}" autocomplete="off" spellcheck="false" placeholder="${sec.code === 'E' ? '改寫整句' : '填空'}">
-        <span class="fb" id="fb_${i.id}"></span></div></div>`).join('')}
+        <span class="fb" id="fb_${i.id}"></span></div></div>`; }).join('')}
       <div class="rate-row"><button class="btn primary" data-check="${sec.code}">批改這段</button>
         <button class="btn" data-reveal="${sec.code}">顯示全部答案</button>
-        <span class="spacer"></span><span class="small muted" id="sc_${sec.code}"></span></div></div>`).join('')}`;
+        <span class="spacer"></span><span class="small muted" id="sc_${sec.code}"></span></div></div>`; }).join('')}`;
   v.querySelectorAll('[data-check]').forEach(b => b.onclick = () => checkSection(b.dataset.check, false));
   v.querySelectorAll('[data-reveal]').forEach(b => b.onclick = () => checkSection(b.dataset.reveal, true));
   (LESSON.grammar || []).forEach(sec => sec.items.forEach(i => {
@@ -569,6 +601,8 @@ function checkSection(code, reveal) {
   });
   save();
   $('sc_' + code).textContent = `${ok} / ${sec.items.length} 正確`;
+  const msg = `${ok} / ${sec.items.length} 正確`;
+  setTimeout(() => { render(); const el = $('sc_' + code); if (el) el.textContent = msg; }, 1200);
 }
 
 /* ---------------- 音檔狀態 ---------------- */
@@ -581,7 +615,9 @@ function renderAudio(v) {
       <label class="btn" for="importFile">匯入進度</label><input type="file" id="importFile" accept="application/json" hidden></div>
     <div class="card marks" style="margin-top:14px">${all.map((i, ix) => {
       const kind = refKind(i), m = audioMeta(i) || {};
-      return `<div class="mk"><span class="chip${kind === 'teacher' ? ' accent' : ''}">${kind === 'teacher' ? '老師' : kind === 'tts' ? '合成' : '無'}</span>
+      const learned = ((got(i.k) || {}).reps || 0) > 0;
+      return `<div class="mk${learned ? ' learned' : ''}"><span class="mark">${learned ? '✓' : ''}</span>
+        <span class="chip${kind === 'teacher' ? ' accent' : ''}">${kind === 'teacher' ? '老師' : kind === 'tts' ? '合成' : '無'}</span>
         <span class="tx">${esc(i.main).slice(0, 80)}</span>
         ${m.score ? `<span class="tm">相似度 ${m.score}</span>` : ''}
         <button class="btn sm" data-play="${ix}">▶</button></div>`;
@@ -646,7 +682,7 @@ async function boot() {
   INDEX = await (await fetch(`${DATA}/index.json`, { cache: 'no-cache' })).json();
   if (!INDEX.lessons || !INDEX.lessons.length) {
     $('gate').hidden = false;
-    $('gate').innerHTML = '<div class="card pad">還沒有任何課程資料。把講義放進 repo 的 <code>inbox/</code> 再推上來就會自動出現。</div>';
+    $('gate').innerHTML = '<div class="card pad">還沒有任何課程。<br><br>把講義（例如 <code>L2.docx</code>）和同名的上課錄音放進電腦上的 <code>inbox</code> 資料夾，雙擊 <code>add-lesson.bat</code>，跑完這裡就會出現。</div>';
     return;
   }
   const saved = localStorage.getItem('ep.pw');

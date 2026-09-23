@@ -9,25 +9,25 @@
   {
    "id": "L1",
    "path": "L1/lesson.enc",
-   "audio": 195,
+   "audio": 207,
    "added": "2026-09-23"
   },
   {
    "id": "L2",
    "path": "L2/lesson.enc",
-   "audio": 160,
+   "audio": 180,
    "added": "2026-09-23"
   },
   {
    "id": "L3",
    "path": "L3/lesson.enc",
-   "audio": 154,
+   "audio": 181,
    "added": "2026-09-23"
   }
  ],
  "kdf": {
-  "salt": "7cd6d193b0c37ea5bcddc80645bd310b",
+  "salt": "b8ebaee25cfcfe1e203eb0da678550b0",
   "iters": 250000
  },
- "check": "d3eeb2624e196ceab5cd3040cf6a6e23fddbacc46c1f21ce49aa7766b860513a1776793471c354e13c93fe61"
+ "check": "48c630dfb87e5bfce44d1a999ebc13ef01511c7aff489e98a154db2622276843015eae9a73dbcf92a94c50f7"
 }
