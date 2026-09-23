@@ -3,37 +3,37 @@
   {
    "id": "L0",
    "path": "L0/lesson.enc",
-   "audio": 33,
-   "added": "2026-09-23"
+   "audio": 161,
+   "added": "2026-09-24"
   },
   {
    "id": "L1",
    "path": "L1/lesson.enc",
-   "audio": 195,
-   "added": "2026-09-23"
+   "audio": 158,
+   "added": "2026-09-24"
   },
   {
    "id": "L2",
    "path": "L2/lesson.enc",
    "audio": 160,
-   "added": "2026-09-23"
+   "added": "2026-09-24"
   },
   {
    "id": "L3",
    "path": "L3/lesson.enc",
    "audio": 159,
-   "added": "2026-09-23"
+   "added": "2026-09-24"
   },
   {
    "id": "L4",
    "path": "L4/lesson.enc",
    "audio": 159,
-   "added": "2026-09-23"
+   "added": "2026-09-24"
   }
  ],
  "kdf": {
   "salt": "a7203153c9f25bfc5a29ea73a9fe963a",
   "iters": 250000
  },
- "check": "dbe2d7d1bae6eacbb9b022db76ded5d2a132732a1597f3856bb395eb7922b5272d84c0685163c0fb944c22e0"
+ "check": "1b72337fb5d1d0d41e910f4ed00b2941c0f2b746b4204258efa00c407cb5113470699b9cbe40c24919fc6357"
 }
